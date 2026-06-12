@@ -2,14 +2,15 @@
 // character controller (acceleration, skid, variable jump, coyote time,
 // jump buffering, squash & stretch).
 import * as THREE from 'three';
+import { toon } from './materials.js';
 
 const PLAYER = {
   height: 1.5,
   halfW: 0.38,
   maxSpeed: 8.5,
-  accelGround: 60,
-  accelAir: 32,
-  friction: 70,
+  accelGround: 72,
+  accelAir: 38,
+  friction: 85,
   jumpVel: 11.8,
   jumpCutVel: 4.5,
   gravityUp: 27,      // while rising & holding jump (floatier apex)
@@ -21,18 +22,14 @@ const PLAYER = {
   stompBounceHeld: 13,
 };
 
-function lambert(color) {
-  return new THREE.MeshLambertMaterial({ color });
-}
-
 function buildModel() {
   const g = new THREE.Group();
-  const red = lambert(0xd92a1c);
-  const blue = lambert(0x2549c7);
-  const skin = lambert(0xf3c089);
-  const brown = lambert(0x6b3a17);
-  const dark = lambert(0x3a2410);
-  const white = lambert(0xffffff);
+  const red = toon(0xe6362a);
+  const blue = toon(0x2d54e0);
+  const skin = toon(0xf6c79a);
+  const brown = toon(0x6b3a17);
+  const dark = toon(0x3a2410);
+  const white = toon(0xffffff);
 
   // torso (red shirt) + overalls
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.45, 0.42), red);
@@ -179,7 +176,9 @@ export class Player {
     return true;
   }
 
-  update(dt, input, colliders) {
+  // camFwd / camRight: camera basis projected onto the ground plane,
+  // so stick "up" is always away from the camera and "right" is screen-right.
+  update(dt, input, colliders, camFwd, camRight) {
     const P = PLAYER;
     this._headHits.length = 0;
 
@@ -188,15 +187,17 @@ export class Player {
       this.pos.addScaledVector(this.groundCollider.vel, dt);
     }
 
-    // ----- horizontal movement (camera-relative: forward = +X, right = -Z) -----
-    const wishX = input.move.y;
-    const wishZ = -input.move.x;
+    // ----- horizontal movement, camera-relative -----
+    const wishX = camFwd.x * input.move.y + camRight.x * input.move.x;
+    const wishZ = camFwd.z * input.move.y + camRight.z * input.move.x;
     const wishLen = Math.min(1, Math.hypot(wishX, wishZ));
-    const accel = this.grounded ? P.accelGround : P.accelAir;
+    let accel = this.grounded ? P.accelGround : P.accelAir;
 
     if (wishLen > 0.05) {
       const nx = wishX / Math.max(wishLen, 0.001) * wishLen;
       const nz = wishZ / Math.max(wishLen, 0.001) * wishLen;
+      // turn assist: steering against current velocity bites harder (crisp direction changes)
+      if (nx * this.vel.x + nz * this.vel.z < 0) accel *= 1.7;
       this.vel.x += nx * accel * dt;
       this.vel.z += nz * accel * dt;
       const maxSp = P.maxSpeed * wishLen;

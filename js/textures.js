@@ -24,11 +24,63 @@ function speckle(ctx, size, colors, count) {
 }
 
 export function grassTexture() {
+  // two-tone checker, Mario-3D-World style (each cell = 1m at repeat w/2)
   const [c, ctx] = makeCanvas(64);
-  ctx.fillStyle = '#3db83d';
+  ctx.fillStyle = '#5fcf52';
   ctx.fillRect(0, 0, 64, 64);
-  speckle(ctx, 64, ['#56d156', '#2fa12f', '#48c648', '#35ad35'], 240);
+  ctx.fillStyle = '#4cbb45';
+  ctx.fillRect(0, 0, 32, 32);
+  ctx.fillRect(32, 32, 32, 32);
+  speckle(ctx, 64, ['#6eda60', '#45b13e', '#57c74c'], 130);
   return toTexture(c);
+}
+
+export function flowerTexture() {
+  const [c, ctx] = makeCanvas(32);
+  ctx.clearRect(0, 0, 32, 32);
+  // stem
+  ctx.fillStyle = '#2e8b2e';
+  ctx.fillRect(14, 16, 4, 16);
+  ctx.fillRect(10, 22, 4, 3);
+  // petals
+  ctx.fillStyle = '#ffffff';
+  [[16, 4], [8, 10], [24, 10], [10, 18], [22, 18]].forEach(([x, y]) => {
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
+  });
+  // center
+  ctx.fillStyle = '#ffc400';
+  ctx.beginPath(); ctx.arc(16, 11, 4.5, 0, 7); ctx.fill();
+  return toTexture(c);
+}
+
+export function tuftTexture() {
+  const [c, ctx] = makeCanvas(32);
+  ctx.clearRect(0, 0, 32, 32);
+  ctx.strokeStyle = '#3fae3f';
+  ctx.lineWidth = 3;
+  for (const [x0, x1] of [[6, 2], [12, 9], [16, 16], [20, 23], [26, 30]]) {
+    ctx.beginPath();
+    ctx.moveTo(x0, 32);
+    ctx.quadraticCurveTo(x0, 16, x1, 6);
+    ctx.stroke();
+  }
+  return toTexture(c);
+}
+
+export function sunTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,250,220,1)');
+  g.addColorStop(0.25, 'rgba(255,240,180,0.9)');
+  g.addColorStop(0.5, 'rgba(255,225,140,0.35)');
+  g.addColorStop(1, 'rgba(255,220,120,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 export function dirtTexture() {

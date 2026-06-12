@@ -2,9 +2,10 @@
 // moving platforms, checkpoint, flagpole and scenery.
 import * as THREE from 'three';
 import * as TEX from './textures.js';
+import { toon } from './materials.js';
 
 const BLOCK = 1;        // block size
-const lambert = (color) => new THREE.MeshLambertMaterial({ color });
+const lambert = toon;   // cel-shaded look everywhere
 
 // ---------------------------------------------------------------- particles
 class Particles {
@@ -152,27 +153,31 @@ export class Level {
     this.flag = { x: 196, z: 0, mesh: null, cloth: null, reached: false };
 
     this._mats = this._makeMaterials();
-    this._coinGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.08, 18);
+    this._coinGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.09, 20);
     this._coinMat = new THREE.MeshStandardMaterial({
-      color: 0xffc400, metalness: 0.7, roughness: 0.25, emissive: 0x553300,
+      color: 0xffd23e, metalness: 0.85, roughness: 0.18,
+      emissive: 0x4a2f00, envMapIntensity: 1.3,
     });
 
     this._build();
   }
 
   _makeMaterials() {
-    const grass = TEX.grassTexture();
-    const dirt = TEX.dirtTexture();
+    const texToon = (map) => {
+      const m = toon(0xffffff);
+      m.map = map;
+      return m;
+    };
     return {
-      grassTop: new THREE.MeshLambertMaterial({ map: grass }),
-      dirtSide: new THREE.MeshLambertMaterial({ map: dirt }),
+      grassTop: texToon(TEX.grassTexture()),
+      dirtSide: texToon(TEX.dirtTexture()),
       dirtPlain: lambert(0x8a4d24),
-      brick: new THREE.MeshLambertMaterial({ map: TEX.brickTexture() }),
-      question: new THREE.MeshLambertMaterial({ map: TEX.questionTexture() }),
-      used: new THREE.MeshLambertMaterial({ map: TEX.usedBlockTexture() }),
-      stone: new THREE.MeshLambertMaterial({ map: TEX.stoneTexture() }),
-      pipe: lambert(0x18a818),
-      pipeDark: lambert(0x0e7a0e),
+      brick: texToon(TEX.brickTexture()),
+      question: texToon(TEX.questionTexture()),
+      used: texToon(TEX.usedBlockTexture()),
+      stone: texToon(TEX.stoneTexture()),
+      pipe: lambert(0x1cb51c),
+      pipeDark: lambert(0x0e8a0e),
     };
   }
 
@@ -283,8 +288,7 @@ export class Level {
   _movingPlatform(x, y, z, { w = 3, d = 3, axis = 'x', amp = 4, period = 4, phase = 0 } = {}) {
     const thick = 0.6;
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w, thick, d),
-      new THREE.MeshLambertMaterial({ color: 0xd96a25 }));
+      new THREE.BoxGeometry(w, thick, d), lambert(0xd96a25));
     const edge = new THREE.Mesh(
       new THREE.BoxGeometry(w + 0.2, 0.18, d + 0.2),
       lambert(0xf7a000));
@@ -483,16 +487,16 @@ export class Level {
     const hillMat2 = lambert(0x37b24d);
     for (let i = 0; i < 22; i++) {
       const x = -10 + i * 11 + Math.random() * 6;
-      const z = (Math.random() > 0.5 ? 1 : -1) * (14 + Math.random() * 18);
-      const r = 3 + Math.random() * 6;
+      const z = (Math.random() > 0.5 ? 1 : -1) * (22 + Math.random() * 18);
+      const r = 4 + Math.random() * 7;
       const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10),
         Math.random() > 0.5 ? hillMat : hillMat2);
-      hill.scale.y = 0.55;
-      hill.position.set(x, -r * 0.1, z);
+      hill.scale.y = 0.5;
+      hill.position.set(x, -r * 0.42, z);
       this.scene.add(hill);
     }
     // clouds
-    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const cloudMat = lambert(0xffffff);
     this.clouds = [];
     for (let i = 0; i < 14; i++) {
       const c = new THREE.Group();
@@ -506,6 +510,33 @@ export class Level {
         (Math.random() - 0.5) * 40);
       this.scene.add(c);
       this.clouds.push({ mesh: c, speed: 0.3 + Math.random() * 0.5 });
+    }
+    // distant low-poly mountains, silhouetted in the fog
+    const mtnMats = [lambert(0x7fb2d9), lambert(0x8fc3e3), lambert(0x6fa0c9)];
+    for (let i = 0; i < 12; i++) {
+      const h = 18 + Math.random() * 14;
+      const r = 14 + Math.random() * 10;
+      const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), mtnMats[i % 3]);
+      const side = i % 2 === 0 ? 1 : -1;
+      m.position.set(-20 + i * 22 + Math.random() * 10, h / 2 - 2,
+        side * (48 + Math.random() * 25));
+      m.rotation.y = Math.random() * Math.PI;
+      this.scene.add(m);
+    }
+    // flowers & grass tufts sprinkled on the ground slabs
+    const flowerMat = new THREE.SpriteMaterial({ map: TEX.flowerTexture(), transparent: true });
+    const tuftMat = new THREE.SpriteMaterial({ map: TEX.tuftTexture(), transparent: true });
+    const slabs = [[-10, 44], [52, 84], [120, 150], [158, 176]];
+    for (const [x1, x2] of slabs) {
+      for (let i = 0; i < 14; i++) {
+        const isFlower = i % 3 === 0;
+        const s = new THREE.Sprite(isFlower ? flowerMat : tuftMat);
+        const sc = isFlower ? 0.65 : 0.55;
+        s.scale.setScalar(sc);
+        s.position.set(x1 + Math.random() * (x2 - x1),
+          sc / 2 - 0.04, (Math.random() - 0.5) * 14);
+        this.scene.add(s);
+      }
     }
     // bushes on ground sections
     const bushMat = lambert(0x2bb52b);

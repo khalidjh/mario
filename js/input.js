@@ -11,6 +11,7 @@ export class Input {
     this._stickPointer = null;
     this._stickOrigin = { x: 0, y: 0 };
     this._stickRadius = 60;
+    this._jumpPointers = new Set();   // touches currently holding jump (button or right side)
 
     this._base = document.getElementById('stick-base');
     this._knob = document.getElementById('stick-knob');
@@ -32,7 +33,9 @@ export class Input {
     });
     window.addEventListener('keyup', (e) => {
       this._keys.delete(e.code);
-      if (e.code === 'Space' || e.code === 'KeyZ') this.jumpHeld = false;
+      if ((e.code === 'Space' || e.code === 'KeyZ') && this._jumpPointers.size === 0) {
+        this.jumpHeld = false;
+      }
     });
     window.addEventListener('blur', () => {
       this._keys.clear();
@@ -49,15 +52,21 @@ export class Input {
     };
     window.addEventListener('touchstart', onTouchStart, { passive: false });
 
-    // Virtual joystick: appears wherever the left half of the screen is touched.
+    // Left side of screen: virtual joystick appears wherever you touch.
+    // Right side of screen: the whole area is a jump zone (the A button is a visual cue).
     window.addEventListener('pointerdown', (e) => {
       if (e.pointerType !== 'touch') return;
-      if (e.target === this._jumpBtn) return;
-      if (e.clientX > window.innerWidth * 0.55) return;
+      if (e.clientX > window.innerWidth * 0.55 || e.target === this._jumpBtn) {
+        this._jumpPointers.add(e.pointerId);
+        this._jumpBtn.classList.add('pressed');
+        this.jumpPressed = true;
+        this.jumpHeld = true;
+        return;
+      }
       if (this._stickPointer !== null) return;
       this._stickPointer = e.pointerId;
       this._stickOrigin = { x: e.clientX, y: e.clientY };
-      this._stickRadius = Math.min(window.innerWidth, window.innerHeight) * 0.10 + 30;
+      this._stickRadius = Math.min(window.innerWidth, window.innerHeight) * 0.11 + 26;
       this._showStick(e.clientX, e.clientY, e.clientX, e.clientY);
     });
     window.addEventListener('pointermove', (e) => {
@@ -67,38 +76,31 @@ export class Input {
       const len = Math.hypot(dx, dy);
       const r = this._stickRadius;
       if (len > r) { dx = dx / len * r; dy = dy / len * r; }
-      this.move.x = dx / r;
-      this.move.y = -dy / r;   // screen up = forward
+      // deadzone + smooth response curve for precise small adjustments
+      const raw = Math.min(1, len / r);
+      const dz = 0.14;
+      const mag = raw < dz ? 0 : (raw - dz) / (1 - dz);
+      const scale = len > 0 ? (mag * mag * (3 - 2 * mag)) / Math.max(raw, 0.001) : 0;
+      this.move.x = (dx / r) * scale;
+      this.move.y = (-dy / r) * scale;   // screen up = forward
       this._showStick(this._stickOrigin.x, this._stickOrigin.y,
                       this._stickOrigin.x + dx, this._stickOrigin.y + dy);
     });
-    const endStick = (e) => {
-      if (e.pointerId !== this._stickPointer) return;
-      this._stickPointer = null;
-      this.move.x = 0; this.move.y = 0;
-      this._base.style.opacity = '0';
-      this._knob.style.opacity = '0';
+    const endPointer = (e) => {
+      if (e.pointerId === this._stickPointer) {
+        this._stickPointer = null;
+        this.move.x = 0; this.move.y = 0;
+        this._base.style.opacity = '0';
+        this._knob.style.opacity = '0';
+      }
+      if (this._jumpPointers.delete(e.pointerId) && this._jumpPointers.size === 0) {
+        this._jumpBtn.classList.remove('pressed');
+        if (!this._keys.has('Space') && !this._keys.has('KeyZ')) this.jumpHeld = false;
+      }
     };
-    window.addEventListener('pointerup', endStick);
-    window.addEventListener('pointercancel', endStick);
-
-    // Jump button
-    const jb = this._jumpBtn;
-    jb.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      jb.classList.add('pressed');
-      this.jumpPressed = true;
-      this.jumpHeld = true;
-    });
-    const jumpEnd = (e) => {
-      e.preventDefault();
-      jb.classList.remove('pressed');
-      this.jumpHeld = false;
-    };
-    jb.addEventListener('pointerup', jumpEnd);
-    jb.addEventListener('pointercancel', jumpEnd);
-    jb.addEventListener('pointerleave', jumpEnd);
-    jb.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('pointerup', endPointer);
+    window.addEventListener('pointercancel', endPointer);
+    this._jumpBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Block page scroll / pinch zoom while playing.
     document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });

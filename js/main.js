@@ -3,6 +3,7 @@ import { Input } from './input.js';
 import { SFX } from './audio.js';
 import { Player } from './player.js';
 import { Level } from './level.js';
+import * as TEXGEN from './textures.js';
 
 // ------------------------------------------------------------- renderer
 const canvas = document.getElementById('game-canvas');
@@ -16,24 +17,92 @@ renderer.setPixelRatio(dpr);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+
+const isTouchDevice = 'ontouchstart' in window;
 
 // ------------------------------------------------------------- scene
 const scene = new THREE.Scene();
-const SKY = 0x5c94fc;
-scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 45, 130);
+const HORIZON = 0xbfe3ff;
+scene.background = new THREE.Color(HORIZON);
+scene.fog = new THREE.Fog(HORIZON, 50, 165);
 
-scene.add(new THREE.HemisphereLight(0xcfe5ff, 0x7a5a3a, 1.0));
-const sun = new THREE.DirectionalLight(0xfff2cc, 2.0);
+// gradient sky dome (follows the camera)
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  fog: false,
+  uniforms: {
+    topColor: { value: new THREE.Color(0x2e7fe8) },
+    horizonColor: { value: new THREE.Color(HORIZON) },
+  },
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main() {
+      vDir = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 topColor;
+    uniform vec3 horizonColor;
+    varying vec3 vDir;
+    void main() {
+      float h = normalize(vDir).y;
+      float t = pow(max(h, 0.0), 0.55);
+      gl_FragColor = vec4(mix(horizonColor, topColor, t), 1.0);
+    }`,
+});
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(240, 24, 12), skyMat);
+skyDome.frustumCulled = false;
+skyDome.renderOrder = -10;
+scene.add(skyDome);
+
+// sun glow sprite, sitting in the same direction the light comes from
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: TEXGEN.sunTexture(),
+  transparent: true,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: false,
+}));
+sunSprite.scale.setScalar(70);
+scene.add(sunSprite);
+
+// simple sky-gradient environment map: gives metals (coins!) something to reflect
+function makeEnvironment() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 32;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 32);
+  g.addColorStop(0, '#9fd2ff');
+  g.addColorStop(0.5, '#fff4dc');
+  g.addColorStop(0.62, '#cfeacb');
+  g.addColorStop(1, '#4d9b4d');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 32);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+scene.environment = makeEnvironment();
+
+scene.add(new THREE.HemisphereLight(0xcfe5ff, 0x8a6a45, 0.85));
+const fillLight = new THREE.DirectionalLight(0xaaccff, 0.5);
+fillLight.position.set(-30, 20, -25);
+scene.add(fillLight);
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.4);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.left = -28;
-sun.shadow.camera.right = 28;
-sun.shadow.camera.top = 28;
-sun.shadow.camera.bottom = -28;
+sun.shadow.mapSize.setScalar(isTouchDevice ? 1024 : 2048);
+sun.shadow.camera.left = -30;
+sun.shadow.camera.right = 30;
+sun.shadow.camera.top = 30;
+sun.shadow.camera.bottom = -30;
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = 120;
-sun.shadow.bias = -0.002;
+sun.shadow.bias = -0.0015;
+sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
@@ -207,6 +276,20 @@ function updateCamera(dt) {
   // keep the sun (and its shadow box) centered on the player
   sun.position.set(p.x + 18, 35, p.z + 14);
   sun.target.position.set(p.x, 0, p.z);
+  // sky + sun glow track the camera so the backdrop never runs out
+  skyDome.position.copy(camera.position);
+  sunSprite.position.set(camera.position.x + 95, camera.position.y + 75, camera.position.z + 65);
+}
+
+// movement basis: camera forward/right flattened onto the ground plane
+const camFwd = new THREE.Vector3(1, 0, 0);
+const camRight = new THREE.Vector3(0, 0, 1);
+function updateMoveBasis() {
+  camera.getWorldDirection(camFwd);
+  camFwd.y = 0;
+  if (camFwd.lengthSq() < 0.0001) camFwd.set(1, 0, 0);
+  camFwd.normalize();
+  camRight.crossVectors(camFwd, THREE.Object3D.DEFAULT_UP).normalize();
 }
 
 // ------------------------------------------------------------- main loop
@@ -219,6 +302,7 @@ function tick() {
   if (dt <= 0) dt = 0.0001;
 
   input.poll();
+  updateMoveBasis();
   const activeInput = game.mode === 'playing' ? input : NULL_INPUT;
 
   if (game.mode === 'playing' || game.mode === 'win' || game.mode === 'gameover') {
@@ -226,7 +310,7 @@ function tick() {
     const steps = Math.max(1, Math.ceil(dt / (1 / 60)));
     const sdt = dt / steps;
     for (let i = 0; i < steps; i++) {
-      const headHits = player.update(sdt, activeInput, level.colliders);
+      const headHits = player.update(sdt, activeInput, level.colliders, camFwd, camRight);
       for (const hit of headHits) {
         game.coins += level.hitBlock(hit, sfx);
       }
