@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#5c94fc" />
+<title>Mario 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #5c94fc;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    font-family: 'Courier New', monospace;
+  }
+  #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none; z-index: 10;
+    color: #fff; font-weight: bold; font-size: clamp(16px, 3.5vmin, 26px);
+    text-shadow: 2px 2px 0 rgba(0,0,0,.55);
+  }
+  .hud-item { display: flex; align-items: center; gap: 6px; }
+  #hud-coin-icon {
+    width: 1em; height: 1em; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ffe97a, #f7b500 65%, #c47d00);
+    box-shadow: 1px 1px 0 rgba(0,0,0,.4); display: inline-block;
+  }
+  #hud-lives { color: #ff5a5a; letter-spacing: 2px; }
+
+  /* ---------- Touch controls ---------- */
+  #touch-ui { position: fixed; inset: 0; z-index: 5; display: none; pointer-events: none; }
+  body.touch #touch-ui { display: block; }
+  #btn-jump { pointer-events: auto; }
+  #stick-base, #stick-knob {
+    position: fixed; border-radius: 50%; pointer-events: none;
+    opacity: 0; transition: opacity .15s;
+  }
+  #stick-base {
+    width: 34vmin; height: 34vmin; max-width: 160px; max-height: 160px;
+    background: rgba(255,255,255,.10); border: 2px solid rgba(255,255,255,.35);
+  }
+  #stick-knob {
+    width: 15vmin; height: 15vmin; max-width: 70px; max-height: 70px;
+    background: rgba(255,255,255,.45); border: 2px solid rgba(255,255,255,.7);
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+  #btn-jump {
+    position: fixed;
+    right: calc(20px + env(safe-area-inset-right));
+    bottom: calc(26px + env(safe-area-inset-bottom));
+    width: 24vmin; height: 24vmin; max-width: 120px; max-height: 120px;
+    border-radius: 50%;
+    background: rgba(230, 60, 50, .8);
+    border: 3px solid rgba(255,255,255,.8);
+    color: #fff; font-size: clamp(18px, 5vmin, 32px); font-weight: bold;
+    font-family: inherit;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.4);
+    box-shadow: 0 4px 0 rgba(120, 20, 15, .8);
+  }
+  #btn-jump:active, #btn-jump.pressed {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 rgba(120, 20, 15, .8);
+  }
+
+  /* ---------- Overlays ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    gap: 4vmin; text-align: center; color: #fff;
+    background: rgba(20, 40, 90, .55);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  }
+  .overlay.hidden { display: none; }
+  .title-big {
+    font-size: clamp(34px, 10vmin, 84px); font-weight: bold; line-height: 1.05;
+    color: #ffd23e;
+    text-shadow: 3px 3px 0 #c0392b, 6px 6px 0 rgba(0,0,0,.35);
+    letter-spacing: 2px;
+  }
+  .title-sub {
+    font-size: clamp(14px, 3.2vmin, 22px);
+    text-shadow: 2px 2px 0 rgba(0,0,0,.5);
+    max-width: 80vw; line-height: 1.6;
+  }
+  .blink { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .overlay button {
+    font-family: inherit; font-weight: bold;
+    font-size: clamp(18px, 4.2vmin, 28px);
+    padding: .6em 1.6em;
+    color: #fff; background: #e63c32;
+    border: 3px solid #fff; border-radius: 14px;
+    box-shadow: 0 5px 0 #8e1d15;
+    cursor: pointer;
+  }
+  .overlay button:active { transform: translateY(4px); box-shadow: 0 1px 0 #8e1d15; }
+  #stats-line { font-size: clamp(16px, 4vmin, 26px); text-shadow: 2px 2px 0 rgba(0,0,0,.5); }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+  <div class="hud-item"><span id="hud-coin-icon"></span><span id="hud-coins">×00</span></div>
+  <div class="hud-item"><span id="hud-time">TIME 300</span></div>
+  <div class="hud-item"><span id="hud-lives">♥♥♥</span></div>
+</div>
+
+<div id="touch-ui">
+  <div id="stick-base"></div>
+  <div id="stick-knob"></div>
+  <button id="btn-jump" aria-label="Jump">A</button>
+</div>
+
+<div id="overlay-title" class="overlay">
+  <div class="title-big">MARIO&nbsp;3D</div>
+  <div class="title-sub">
+    Stomp the goombas, bonk the blocks,<br>grab the coins &amp; reach the flag!
+  </div>
+  <button id="btn-start">▶ START</button>
+  <div class="title-sub" id="controls-hint"></div>
+</div>
+
+<div id="overlay-win" class="overlay hidden">
+  <div class="title-big" style="color:#7CFC7C; text-shadow:3px 3px 0 #1d7a1d, 6px 6px 0 rgba(0,0,0,.35);">COURSE<br>CLEAR!</div>
+  <div id="stats-line"></div>
+  <button id="btn-replay">↻ PLAY AGAIN</button>
+</div>
+
+<div id="overlay-gameover" class="overlay hidden">
+  <div class="title-big" style="color:#ff6b5e;">GAME OVER</div>
+  <button id="btn-retry">↻ TRY AGAIN</button>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
